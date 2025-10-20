@@ -35,24 +35,41 @@ jobs:
           echo "⚠️  Skipping login: secrets not configured."
         fi
 
-    - name: Pull and Save Docker Images (x86-64)
+    - name: Pull, Save and Push Docker Images (x86-64)
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        ALIYUN_REPO_NAMESPACE: ${{ secrets.ALIYUN_REPO_NAMESPACE }}
       run: |
         set -x
         images="${{ github.event.inputs.docker_images }}"
         IFS=',' read -r -a image_array <<< "$images"
+
         for image in "${image_array[@]}"; do
           echo "🚀 Pulling ${image} for linux/amd64 (x86-64) ..."
           docker pull --platform linux/amd64 "${image}"
+
           TAR_NAME="${image//\//_}-x86-64.tar"
           docker save "${image}" -o "${TAR_NAME}"
           echo "📦 Saved as ${TAR_NAME}"
 
-          if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
-            BASENAME=$(basename "${image}")
-            TARGET="registry.cn-hangzhou.aliyuncs.com/${{ secrets.ALIYUN_REPO_NAMESPACE }}/${BASENAME}-x86-64"
+          # Only push if secrets exist
+          if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ] && [ -n "$ALIYUN_REPO_NAMESPACE" ]; then
+            NAME=$(echo "${image}" | cut -d':' -f1)
+            TAG=$(echo "${image}" | cut -s -d':' -f2)
+            [ -z "$TAG" ] && TAG="latest"
+
+            BASENAME=$(basename "${NAME}")
+            TARGET="registry.cn-hangzhou.aliyuncs.com/${ALIYUN_REPO_NAMESPACE}/${BASENAME}-x86-64:${TAG}"
+
             echo "☁️  Tagging & pushing to ${TARGET}"
             docker tag "${image}" "${TARGET}"
             docker push "${TARGET}"
+
+            echo "✅ Pushed: ${TARGET}"
+            docker inspect "${TARGET}" --format='Digest: {{index .RepoDigests 0}}'
+          else
+            echo "⚠️  Skipping push: secrets not fully configured."
           fi
         done
 
