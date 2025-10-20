@@ -1,0 +1,15 @@
+name: Test Workflow Visibility
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print environment info
+        run: |
+          echo "Workflow is running!"
+          echo "Current branch: $GITHUB_REF"
+          echo "Triggered by: $GITHUB_ACTOR"
+          uname -a
