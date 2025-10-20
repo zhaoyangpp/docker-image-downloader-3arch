@@ -1,4 +1,4 @@
-name: ARM64 Pull, Save & Push Docker Image
+name: x86-64 Pull and Save Docker Image
 
 on:
   workflow_dispatch:
@@ -35,21 +35,21 @@ jobs:
           echo "⚠️  Skipping login: secrets not configured."
         fi
 
-    - name: Pull, Save and Push Docker Images
+    - name: Pull and Save Docker Images (x86-64)
       run: |
         set -x
         images="${{ github.event.inputs.docker_images }}"
         IFS=',' read -r -a image_array <<< "$images"
         for image in "${image_array[@]}"; do
-          echo "🚀 Pulling ${image} for linux/arm64 ..."
-          docker pull --platform linux/arm64 --progress=plain "${image}"
-          TAR_NAME="${image//\//_}-arm64.tar"
+          echo "🚀 Pulling ${image} for linux/amd64 (x86-64) ..."
+          docker pull --platform linux/amd64 "${image}"
+          TAR_NAME="${image//\//_}-x86-64.tar"
           docker save "${image}" -o "${TAR_NAME}"
           echo "📦 Saved as ${TAR_NAME}"
 
           if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
             BASENAME=$(basename "${image}")
-            TARGET="registry.cn-hangzhou.aliyuncs.com/${{ secrets.ALIYUN_REPO_NAMESPACE }}/${BASENAME}-arm64"
+            TARGET="registry.cn-hangzhou.aliyuncs.com/${{ secrets.ALIYUN_REPO_NAMESPACE }}/${BASENAME}-x86-64"
             echo "☁️  Tagging & pushing to ${TARGET}"
             docker tag "${image}" "${TARGET}"
             docker push "${TARGET}"
@@ -59,16 +59,16 @@ jobs:
     - name: Compress the TAR files
       run: |
         set -x
-        tar -czf arm64-images.tar.gz *-arm64.tar
+        tar -czf x86-64-images.tar.gz *-x86-64.tar
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: docker-images-arm64
-        path: arm64-images.tar.gz
+        name: docker-images-x86-64
+        path: x86-64-images.tar.gz
         retention-days: 1
 
     - name: Clean up intermediate files
       run: |
         set -x
-        rm -f *-arm64.tar
+        rm -f *-x86-64.tar
