@@ -1,0 +1,30 @@
+name: ARM64 Pull and Save Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Docker image (name:tag)'
+        required: true
+        default: 'nginx:latest'
+
+jobs:
+  pull-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker (if secrets provided)
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Pull and save ARM64 image
+        run: bash scripts/save_image_arch.sh "${{ github.event.inputs.image }}" "linux/arm64" "arm64"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-arm64
+          path: "*.tar"
