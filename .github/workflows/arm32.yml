@@ -1,4 +1,4 @@
-name: ARM32 Pull, Save & Push Docker Image
+name: ARM32 Pull and Save Docker Image
 
 on:
   workflow_dispatch:
@@ -23,31 +23,52 @@ jobs:
         docker volume prune -f
 
     - name: Login to Aliyun Registry (optional)
-      if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
-      uses: docker/login-action@v3
-      with:
-        registry: registry.cn-hangzhou.aliyuncs.com
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      run: |
+        set -x
+        if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
+          echo "🔐 Logging in to Aliyun Registry..."
+          echo "$DOCKER_PASSWORD" | docker login registry.cn-hangzhou.aliyuncs.com -u "$DOCKER_USERNAME" --password-stdin
+        else
+          echo "⚠️  Skipping login: secrets not configured."
+        fi
 
-    - name: Pull, Save and Push Docker Images
+    - name: Pull, Save and Push Docker Images (ARM32)
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        ALIYUN_REPO_NAMESPACE: ${{ secrets.ALIYUN_REPO_NAMESPACE }}
       run: |
         set -x
         images="${{ github.event.inputs.docker_images }}"
         IFS=',' read -r -a image_array <<< "$images"
+
         for image in "${image_array[@]}"; do
-          echo "🚀 Pulling ${image} for linux/arm/v7 ..."
-          docker pull --platform linux/arm/v7 --progress=plain "${image}"
+          echo "🚀 Pulling ${image} for linux/arm/v7 (ARM32) ..."
+          docker pull --platform linux/arm/v7 "${image}"
+
           TAR_NAME="${image//\//_}-arm32.tar"
           docker save "${image}" -o "${TAR_NAME}"
           echo "📦 Saved as ${TAR_NAME}"
 
-          if [ -n "${{ secrets.DOCKER_USERNAME }}" ] && [ -n "${{ secrets.DOCKER_PASSWORD }}" ]; then
-            BASENAME=$(basename "${image}")
-            TARGET="registry.cn-hangzhou.aliyuncs.com/${{ secrets.ALIYUN_REPO_NAMESPACE }}/${BASENAME}-arm32"
+          if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ] && [ -n "$ALIYUN_REPO_NAMESPACE" ]; then
+            NAME=$(echo "${image}" | cut -d':' -f1)
+            TAG=$(echo "${image}" | cut -s -d':' -f2)
+            [ -z "$TAG" ] && TAG="latest"
+
+            BASENAME=$(basename "${NAME}")
+            TARGET="registry.cn-hangzhou.aliyuncs.com/${ALIYUN_REPO_NAMESPACE}/${BASENAME}-arm32:${TAG}"
+
             echo "☁️  Tagging & pushing to ${TARGET}"
             docker tag "${image}" "${TARGET}"
             docker push "${TARGET}"
+
+            echo "✅ Pushed: ${TARGET}"
+            docker inspect "${TARGET}" --format='Digest: {{index .RepoDigests 0}}'
+          else
+            echo "⚠️  Skipping push: secrets not fully configured."
           fi
         done
 
