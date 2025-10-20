@@ -1,4 +1,4 @@
-name: x86-64 Pull and Save Docker Image
+name: X86-64 Pull, Save & Push Docker Image
 
 on:
   workflow_dispatch:
@@ -9,22 +9,41 @@ on:
         default: 'nginx:latest'
 
 jobs:
-  pull-x86-64:
+  pull-x86:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker (if secrets provided)
+      - name: Login to Aliyun Registry (optional)
         if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Pull and save x86-64 image
-        run: bash scripts/save_image_arch.sh "${{ github.event.inputs.image }}" "linux/amd64" "x86-64"
+        run: |
+          IMAGE="${{ github.event.inputs.image }}"
+          docker pull --platform linux/amd64 $IMAGE
+          OUTFILE=$(echo $IMAGE | sed 's#[/:]#_#g')_x86_64.tar
+          docker save $IMAGE -o $OUTFILE
+          echo "Saved as $OUTFILE"
+          ls -lh $OUTFILE
+
+      - name: Push to Aliyun Registry (optional)
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        run: |
+          IMAGE="${{ github.event.inputs.image }}"
+          BASENAME=$(basename $IMAGE)
+          TARGET="registry.cn-hangzhou.aliyuncs.com/${{ secrets.ALIYUN_REPO_NAMESPACE }}/${BASENAME}-x86_64"
+          docker tag $IMAGE $TARGET
+          docker push $TARGET
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: docker-image-x86-64
+          name: docker-image-x86_64
           path: "*.tar"
