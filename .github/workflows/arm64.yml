@@ -1,0 +1,109 @@
+﻿name: ARM64 Pull and Save Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker_images:
+        description: 'Enter Docker images (comma or newline separated)'
+        required: true
+        default: 'alpine:latest'
+
+permissions:
+  contents: write
+
+jobs:
+  pull_and_package:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Clean up Docker to free space
+      run: |
+        set -euo pipefail
+        set -x
+        docker system prune -a -f
+        docker volume prune -f
+
+    - name: Login to Aliyun Registry (optional)
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      run: |
+        set -euo pipefail
+        set -x
+        if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
+          echo "Logging in to Aliyun Registry..."
+          echo "$DOCKER_PASSWORD" | docker login registry.cn-hangzhou.aliyuncs.com -u "$DOCKER_USERNAME" --password-stdin
+        else
+          echo "Skipping login: secrets not configured."
+        fi
+
+    - name: Pull, Save and Package Docker Images (ARM64)
+      id: build
+      run: |
+        set -euo pipefail
+        set -x
+
+        raw_input="${{ github.event.inputs.docker_images }}"
+        raw_input="${raw_input//$'\r'/}"
+        mapfile -t image_array < <(printf '%s\n' "$raw_input" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | sed '/^$/d')
+
+        if [ "${#image_array[@]}" -eq 0 ]; then
+          echo "No images provided after parsing."
+          exit 1
+        fi
+
+        mkdir -p release_files
+
+        FILE_LIST=()
+        MIRROR_LIST=""
+
+        for image in "${image_array[@]}"; do
+          echo "Pulling ${image} for linux/arm64 ..."
+          docker pull --platform linux/arm64 "${image}"
+
+          SAFE_NAME="${image//\//_}"
+          SAFE_NAME="${SAFE_NAME//:/_}"
+
+          TAR_NAME="${SAFE_NAME}-arm64.tar"
+          TAR_GZ_NAME="${SAFE_NAME}-arm64.tar.gz"
+
+          docker save "${image}" -o "${TAR_NAME}"
+          tar -czf "${TAR_GZ_NAME}" "${TAR_NAME}"
+          mv "${TAR_GZ_NAME}" release_files/
+
+          FILE_LIST+=("release_files/${TAR_GZ_NAME}")
+          printf -v MIRROR_LIST "%s- %s\n" "$MIRROR_LIST" "$image"
+
+          rm -f "${TAR_NAME}"
+        done
+
+        printf 'file_list=%s\n' "$(IFS=' '; echo "${FILE_LIST[*]}")" >> "$GITHUB_OUTPUT"
+        {
+          echo "mirror_list<<'EOF'"
+          printf '%s' "$MIRROR_LIST"
+          echo
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-images-arm64
+        path: release_files
+        retention-days: 1
+
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: arm64-${{ github.run_number }}
+        name: "ARM64 Docker Images"
+        body: |
+          Auto-built ARM64 images
+          **Images included:**
+          ${{ steps.build.outputs.mirror_list }}
+        files: ${{ steps.build.outputs.file_list }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
