@@ -82,7 +82,7 @@ jobs:
 
         printf 'file_list=%s\n' "$(IFS=' '; echo "${FILE_LIST[*]}")" >> "$GITHUB_OUTPUT"
         {
-          echo "mirror_list<<'EOF'"
+          echo "mirror_list<<EOF"
           printf '%s' "$MIRROR_LIST"
           echo
           echo "EOF"
