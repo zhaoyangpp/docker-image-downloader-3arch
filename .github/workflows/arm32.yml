@@ -35,56 +35,57 @@ jobs:
           echo "⚠️  Skipping login: secrets not configured."
         fi
 
-    - name: Pull, Save and Push Docker Images (ARM32)
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        ALIYUN_REPO_NAMESPACE: ${{ secrets.ALIYUN_REPO_NAMESPACE }}
+    - name: Pull, Save and Package Docker Images (ARM32)
+      id: build
       run: |
         set -x
         images="${{ github.event.inputs.docker_images }}"
         IFS=',' read -r -a image_array <<< "$images"
 
+        mkdir release_files
+
+        FILE_LIST=""
+        MIRROR_LIST=""
+
         for image in "${image_array[@]}"; do
-          echo "🚀 Pulling ${image} for linux/arm/v7 (ARM32) ..."
+          echo "🚀 Pulling ${image} for linux/arm/v7 ..."
           docker pull --platform linux/arm/v7 "${image}"
 
-          TAR_NAME="${image//\//_}-arm32.tar"
+          SAFE_NAME="${image//\//_}"
+          SAFE_NAME="${SAFE_NAME//:/_}"
+
+          TAR_NAME="${SAFE_NAME}-arm32.tar"
+          TAR_GZ_NAME="${SAFE_NAME}-arm32.tar.gz"
+
           docker save "${image}" -o "${TAR_NAME}"
-          echo "📦 Saved as ${TAR_NAME}"
+          tar -czf "${TAR_GZ_NAME}" "${TAR_NAME}"
+          mv "${TAR_GZ_NAME}" release_files/
 
-          if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ] && [ -n "$ALIYUN_REPO_NAMESPACE" ]; then
-            NAME=$(echo "${image}" | cut -d':' -f1)
-            TAG=$(echo "${image}" | cut -s -d':' -f2)
-            [ -z "$TAG" ] && TAG="latest"
+          FILE_LIST="${FILE_LIST} release_files/${TAR_GZ_NAME}"
+          MIRROR_LIST="${MIRROR_LIST}\n- ${image}"
 
-            BASENAME=$(basename "${NAME}")
-            TARGET="registry.cn-hangzhou.aliyuncs.com/${ALIYUN_REPO_NAMESPACE}/${BASENAME}-arm32:${TAG}"
-
-            echo "☁️  Tagging & pushing to ${TARGET}"
-            docker tag "${image}" "${TARGET}"
-            docker push "${TARGET}"
-
-            echo "✅ Pushed: ${TARGET}"
-            docker inspect "${TARGET}" --format='Digest: {{index .RepoDigests 0}}'
-          else
-            echo "⚠️  Skipping push: secrets not fully configured."
-          fi
+          rm -f "${TAR_NAME}"
         done
 
-    - name: Compress the TAR files
-      run: |
-        set -x
-        tar -czf arm32-images.tar.gz *-arm32.tar
+        echo "file_list=${FILE_LIST}" >> $GITHUB_OUTPUT
+        echo "mirror_list=${MIRROR_LIST}" >> $GITHUB_OUTPUT
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: docker-images-arm32
-        path: arm32-images.tar.gz
+        path: release_files
         retention-days: 1
 
-    - name: Clean up intermediate files
-      run: |
-        set -x
-        rm -f *-arm32.tar
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: arm32-${{ github.run_number }}
+        name: "ARM32 Docker Images"
+        body: |
+          自动构建的 ARM32 镜像  
+          **本次构建镜像：**
+          ${{ steps.build.outputs.mirror_list }}
+        files: ${{ steps.build.outputs.file_list }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
