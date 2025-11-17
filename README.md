@@ -1,111 +1,62 @@
-# 🐳Docker多架构镜像离线下载器（x86/ARM64/ARM32）
+﻿# 🚢 Docker Image Downloader (3-Arch)
 
-本项目提供三个GitHubActions工作流，用于自动拉取、保存并上传Docker镜像，支持以下架构：
+三个 GitHub Actions 工作流，自动拉取并打包 Docker 镜像为 `tar.gz`，支持 **x86-64 / ARM64 / ARM32**。
 
-- x86-64(amd64)
-- ARM64(arm64)
-- ARM32(arm/v7)
+---
 
-无需本地Docker环境，通过GitHubActions即可自动生成`.tar.gz`离线包，适用于无法联网的服务器环境。
+## 🔧 功能特性
+- 多架构：`linux/amd64`、`linux/arm64`、`linux/arm/v7`
+- 多镜像输入：支持逗号或换行分隔，自动去除多余空格
+- 自动压缩：输出 `*-arch.tar.gz`
+- 可选私有仓库登录（DOCKER_USERNAME / DOCKER_PASSWORD）
+- 自动发布：上传 Release，附带构件下载
+- 失败即停：脚本启用 `set -euo pipefail`
 
-## 🚀功能介绍
+---
 
-### ✔多架构支持
-一次仓库满足不同平台(x86/ARM)镜像需求。
+## 🚀 使用步骤（Actions）
+1. 将仓库上传到 GitHub。
+2. 打开 **Actions**，选择工作流：
+   - `x86-64 Pull and Save Docker Image`
+   - `ARM64 Pull and Save Docker Image`
+   - `ARM32 Pull and Save Docker Image`
+3. 点击 **Run workflow**，在输入框填写镜像（逗号或换行分隔），示例：
+   ```
+   nginx:latest
+   alpine:latest
+   ```
+   或 `nginx:latest, alpine:latest`
+4. 等待任务完成，在右侧 **Artifacts** 下载 `.tar.gz`，或到对应 Release 下载。
 
-### ✔自动生成离线包
-每次运行会自动完成：
-1.拉取指定架构镜像
-2.导出为`.tar`
-3.压缩为`.tar.gz`
-4.上传至GitHubRelease
-5.ActionsArtifact也可下载
+---
 
-### ✔批量下载
-支持输入多个镜像名称(英文逗号分隔)：
+## 🔑 私有仓库登录（可选）
+仓库 `Settings` → `Secrets and variables` → `Actions` 添加：
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`
 
-```
-ubuntu:22.04,nginx:latest,redis:7
-```
+配置后会自动 `docker login registry.cn-hangzhou.aliyuncs.com`；未配置则跳过登录。
 
-### ✔可选上传到阿里云镜像仓库
-若配置以下Secrets则自动推送：
+---
 
-- DOCKER_USERNAME
-- DOCKER_PASSWORD
-- ALIYUN_REPO_NAMESPACE
+## 📂 输出命名规则
+- 每个镜像生成：`<image>-<arch>.tar.gz`
+- 镜像名中的 `/`、`:` 会被替换为 `_`，如：`nginx:latest` → `nginx_latest-arm64.tar.gz`
 
-未配置则自动跳过推送步骤。
+---
 
-## 📌使用方法
-
-### 1.打开Actions页面
-点击仓库顶部的Actions。
-
-### 2.选择对应架构的工作流
-- x86-64PullandSaveDockerImage
-- ARM64PullandSaveDockerImage
-- ARM32PullandSaveDockerImage
-
-### 3.点击“Runworkflow”
-输入镜像名称，例如：
-
-```
-nginx:latest
-```
-
-多个镜像：
-
-```
-alpine:latest,busybox:latest
-```
-
-### 4.下载离线包
-成功完成后可在以下位置获取：
-- GitHubReleases
-- ActionsArtifact
-
-## 📦离线导入镜像
-
+## 🧪 本地脚本示例
 ```bash
-tar -xzvf xxx.tar.gz
-docker load -i xxx.tar
+bash scripts/save_image_arch.sh nginx:latest linux/arm64 arm64
 ```
 
-## 🔧可选Secrets说明
+---
 
-| Secret名称 | 用途 |
-|-----------|------|
-| DOCKER_USERNAME | Docker/阿里云仓库用户名 |
-| DOCKER_PASSWORD | 仓库密码 |
-| ALIYUN_REPO_NAMESPACE | 推送到阿里云的命名空间 |
+## 🔍 已改进要点
+- `permissions: contents: write` 允许 Release 写入
+- 失败即停：`set -euo pipefail`
+- 输入更健壮：逗号/换行分隔，去除空格，过滤空行
+- Release 正文使用真实换行的镜像列表
+- x86-64 也上传构件，行为与 ARM 流程一致
 
-## 📁工作流文件结构
-
-```
-.github/workflows/
-├── x86-64.yml
-├── arm64.yml
-└── arm32.yml
-```
-
-## ⭐示例镜像
-
-```
-ubuntu:latest
-nginx:stable
-mysql:8.0
-redis:7
-alpine:latest
-python:3.10
-node:20.12.2-alpine
-```
-
-## 📝许可证
-
-本项目使用MITLicense  
-©2025zhaoyangpp
-
-## ⭐支持项目
-
-如果本项目对你有帮助，欢迎点Star支持！
+MIT © 2025 zhaoyangpp
